@@ -1,0 +1,7 @@
+model_name: ProsusAI/finbert
+max_length: 128
+batch_size: 16
+learning_rate: 0.00002
+epochs: 3
+weight_decay: 0.01
+output_dir: model/finbert
