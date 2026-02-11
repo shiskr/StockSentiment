@@ -1,6 +1,6 @@
 import requests
 
-API_KEY = "p5XvGpQHSVihq8Z3jrzE97cWYgp_Ii8i"
+API_KEY = "TOKEN"
 
 def fetch_news(ticker, limit=10):
     url = "https://api.polygon.io/v2/reference/news"
