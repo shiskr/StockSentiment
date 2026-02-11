@@ -20,7 +20,6 @@ dill==0.3.8
 executing==2.2.1
 fastapi==0.122.0
 filelock==3.19.1
-flask
 fonttools==4.60.2
 frozenlist==1.8.0
 fsspec==2024.2.0
