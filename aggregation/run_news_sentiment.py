@@ -1,61 +1,67 @@
 from news.fetch_news import fetch_news
 from inference.predict import predict
 from collections import Counter
-from storage.db import save_result, init_db
-
-init_db()
 
 
-def analyze_stock_news(ticker, limit=100):
-    articles = fetch_news(ticker, limit=limit)
+def analyze_stock_news(stock: str, limit: int = 100):
+    """
+    Fetch news for a stock, run sentiment prediction,
+    and return:
+        1) summary dict
+        2) list of article dicts
+    """
 
-    # Deduplicate based on title/text
-    seen = set()
-    unique_articles = []
+    news_articles = fetch_news(stock, limit)
 
-    for article in articles:
-        title = article.strip()
-        if title not in seen:
-            seen.add(title)
-            unique_articles.append(title)
-
-    articles = unique_articles
-
-    results = []
+    sentiments = []
     detailed_results = []
 
-    for article in articles:
-        label, probs = predict(article)
-        results.append(label)
-        clean_title = article.strip().split(".")[0]  # first sentence only
-        detailed_results.append((clean_title, label))
+    for article in news_articles:
 
-        print("\n--- ARTICLE ---")
-        print(article[:200], "...")
-        print("Sentiment:", label)
+        # If fetch_news returns dict → use title
+        if isinstance(article, dict):
+            title = article.get("title", "")
+        else:
+            # If fetch_news returns string → use directly
+            title = str(article)
 
-    summary = Counter(results)
+        if not title:
+            continue
 
-    print("\n=== SUMMARY ===")
-    print(summary)
-    buy = summary["BUY"]
-    sell = summary["SELL"]
-    hold = summary["HOLD"]
-    save_result(ticker, buy, sell, hold)
+        label = predict(title)
 
-    score = buy - sell
+        sentiments.append(label)
 
-    print("\nSentiment Score:", score)
+        detailed_results.append({
+            "title": title,
+            "sentiment": label
+        })
+
+    counter = Counter(sentiments)
+
+    buy_count = counter.get("BUY", 0)
+    sell_count = counter.get("SELL", 0)
+    hold_count = counter.get("HOLD", 0)
+
+    score = buy_count - sell_count
 
     if score >= 5:
-        print("🚨 STRONG BUY SIGNAL 🚀")
+        signal = "🚨 STRONG BUY"
     elif score <= -5:
-        print("🚨 STRONG SELL SIGNAL 🔻")
-    elif buy > sell:
-        print("Overall sentiment: BULLISH 📈")
-    elif sell > buy:
-        print("Overall sentiment: BEARISH 📉")
+        signal = "🚨 STRONG SELL"
+    elif score > 0:
+        signal = "Bullish"
+    elif score < 0:
+        signal = "Bearish"
     else:
-        print("Overall sentiment: NEUTRAL ⚖️")
-    return detailed_results
+        signal = "Neutral"
 
+    summary = {
+        "stock": stock,
+        "buy": buy_count,
+        "sell": sell_count,
+        "hold": hold_count,
+        "signal": signal
+    }
+
+    return summary, detailed_results

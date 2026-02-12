@@ -3,7 +3,6 @@ import yaml
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
-
 import torch
 from datasets import Dataset
 from transformers import (
@@ -12,6 +11,13 @@ from transformers import (
     Trainer,
     TrainingArguments
 )
+from datetime import datetime
+
+def build_output_dir(base_dir):
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M")
+    version_dir = os.path.join(base_dir, f"v_{timestamp}")
+    os.makedirs(version_dir, exist_ok=True)
+    return version_dir
 
 
 def load_config(path: str) -> dict:
@@ -92,6 +98,8 @@ def train():
         type(config["epochs"]),
         type(config["weight_decay"])
     )
+    base_output_dir = config["output_dir"]
+    output_dir = build_output_dir(base_output_dir)
 
     # Load and prepare dataset
     df = load_dataset("data/processed/processed_data.csv")
@@ -150,9 +158,13 @@ def train():
     os.makedirs(config["output_dir"], exist_ok=True)
     trainer.save_model(config["output_dir"])
     tokenizer.save_pretrained(config["output_dir"])
-
+    update_latest_pointer(base_output_dir, output_dir)
     print(f"Training complete. Model saved to {config['output_dir']}")
 
+def update_latest_pointer(base_dir, version_dir):
+    latest_file = os.path.join(base_dir, "latest.txt")
+    with open(latest_file, "w") as f:
+        f.write(os.path.basename(version_dir))
 
 if __name__ == "__main__":
     train()

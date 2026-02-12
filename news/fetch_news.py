@@ -1,9 +1,10 @@
 import requests
 
 API_KEY = "TOKEN"
+API_URL = "https://newsapi.org/v2/top-headlines?"
 
 def fetch_news(ticker, limit=10):
-    url = "https://api.polygon.io/v2/reference/news"
+    url = API_URL
 
     params = {
         "ticker": ticker,
@@ -16,14 +17,4 @@ def fetch_news(ticker, limit=10):
 
     data = r.json()
 
-    articles = []
-
-    for item in data.get("results", []):
-        title = item.get("title", "")
-        description = item.get("description", "")
-
-        # Combine title + description
-        full_text = f"{title}. {description}"
-        articles.append(full_text.strip())
-
-    return articles
+    return [item["title"] for item in data.get("results", [])]

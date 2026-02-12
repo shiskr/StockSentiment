@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Stock Sentiment Dashboard</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/styles.css') }}">
+</head>
+<body>
+
+<h1>Stock Sentiment Dashboard</h1>
+
+<form method="POST" id="stock-form">
+    <input type="text" name="ticker" placeholder="Enter Stocks (e.g. TSLA, AAPL, GOLD)" required>
+    <input type="number" name="limit" value="100" min="1">
+    <button type="submit">Analyze</button>
+</form>
+
+<!-- Loading placeholders -->
+<div id="loading-container" class="results-grid history-scroll" style="display:none;"></div>
+
+<hr>
+
+{% if results and results|length > 0 %}
+<div class="results-grid history-scroll">
+    {% for r in results %}
+        <div class="result-card">
+            <h3>{{ r["stock"] }}</h3>
+            <p>BUY: {{ r["buy"] }}</p>
+            <p>SELL: {{ r["sell"] }}</p>
+            <p>HOLD: {{ r["hold"] }}</p>
+            <p class="signal"><strong>{{ r["signal"] }}</strong></p>
+        </div>
+    {% endfor %}
+</div>
+{% endif %}
+
+<hr>
+
+<h3>Scanned Articles</h3>
+
+{% if analyzed_articles and analyzed_articles|length > 0 %}
+    {% for ticker, articles in analyzed_articles.items() %}
+        <h4>{{ ticker }}</h4>
+        <div class="articles">
+            {% for item in articles %}
+                <div class="article-item">
+                    <strong>{{ item["title"] }}</strong>
+                    <span class="{{ item["sentiment"] }}">
+                        {{ item["sentiment"] }}
+                    </span>
+                </div>
+            {% endfor %}
+        </div>
+        <br>
+    {% endfor %}
+{% else %}
+    <p>No articles analyzed yet.</p>
+{% endif %}
+
+<script>
+document.getElementById("stock-form").addEventListener("submit", function() {
+
+    const tickerInput = document.querySelector('input[name="ticker"]').value;
+    const container = document.getElementById("loading-container");
+
+    container.innerHTML = "";
+    container.style.display = "flex";
+
+    const tickers = tickerInput
+        .split(",")
+        .map(t => t.trim())
+        .filter(t => t.length > 0);
+
+    tickers.forEach(ticker => {
+        container.innerHTML += `
+            <div class="result-card">
+                <h3>${ticker.toUpperCase()}</h3>
+                <div class="spinner"></div>
+                <p>Analyzing...</p>
+            </div>
+        `;
+    });
+});
+</script>
+
+</body>
+</html>

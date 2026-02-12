@@ -1,0 +1,84 @@
+body {
+    font-family: Arial, sans-serif;
+    padding: 20px;
+    background-color: #f4f6f8;
+}
+
+h1 {
+    margin-bottom: 20px;
+}
+
+form {
+    margin-bottom: 20px;
+}
+
+input[type="text"],
+input[type="number"] {
+    padding: 6px;
+    margin-right: 8px;
+}
+
+button {
+    padding: 6px 12px;
+    cursor: pointer;
+}
+
+hr {
+    margin: 20px 0;
+}
+
+.articles {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid #ddd;
+    padding: 10px;
+    background: white;
+}
+
+.article-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 0;
+    border-bottom: 1px solid #eee;
+}
+
+.article-item:last-child {
+    border-bottom: none;
+}
+
+.BUY {
+    color: green;
+    font-weight: bold;
+}
+
+.SELL {
+    color: red;
+    font-weight: bold;
+}
+
+.HOLD {
+    color: orange;
+    font-weight: bold;
+}
+
+.result-box {
+    padding: 15px;
+    border: 1px solid #ddd;
+    background: white;
+    margin-bottom: 20px;
+}
+.results-grid {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.result-card {
+    border: 1px solid #ddd;
+    padding: 15px;
+    width: 220px;
+    background: white;
+    border-radius: 6px;
+}
