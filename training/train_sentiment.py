@@ -3,6 +3,9 @@ import yaml
 import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
+from azure.storage.blob import BlobServiceClient
+from datetime import datetime
+import json
 
 import torch
 from datasets import Dataset
@@ -14,11 +17,11 @@ from transformers import (
 )
 
 
+
 def load_config(path: str) -> dict:
     """Load YAML training configuration."""
     with open(path, "r") as f:
         return yaml.safe_load(f)
-
 
 def load_dataset(csv_path: str) -> pd.DataFrame:
     """Load processed sentiment dataset."""
@@ -26,6 +29,19 @@ def load_dataset(csv_path: str) -> pd.DataFrame:
         raise FileNotFoundError(f"Dataset not found: {csv_path}")
     return pd.read_csv(csv_path)
 
+def download_dataset_from_blob(container_name, blob_name, local_path, connection_string):
+    """Download dataset from Azure Blob Storage"""
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container = blob_service_client.get_container_client(container_name)
+
+    os.makedirs(os.path.dirname(local_path), exist_ok=True)
+
+    with open(local_path, "wb") as file:
+        blob_client = container.get_blob_client(blob_name)
+        download_stream = blob_client.download_blob()
+        file.write(download_stream.readall())
+
+    print(f"Dataset downloaded to {local_path}")
 
 def encode_labels(df: pd.DataFrame) -> pd.DataFrame:
     """Map sentiment strings to numeric labels."""
@@ -39,7 +55,6 @@ def encode_labels(df: pd.DataFrame) -> pd.DataFrame:
         raise ValueError("Found unmapped sentiment labels")
     return df
 
-
 def split_dataset(df: pd.DataFrame):
     """Stratified train/validation split."""
     return train_test_split(
@@ -48,7 +63,6 @@ def split_dataset(df: pd.DataFrame):
         stratify=df["label"],
         random_state=42
     )
-
 
 def build_tokenizer_and_model(model_name: str, num_labels: int = 3):
     """Load tokenizer and FinBERT model."""
@@ -59,18 +73,16 @@ def build_tokenizer_and_model(model_name: str, num_labels: int = 3):
     )
     return tokenizer, model
 
-
 def tokenize_function(tokenizer, max_length: int):
     """Create a tokenization function for HF datasets."""
     def _tokenize(batch):
         return tokenizer(
             batch["text"],
             truncation=True,
-            padding="max_length",
+            padding="longest",
             max_length=max_length
         )
     return _tokenize
-
 
 def compute_metrics(eval_pred):
     """Evaluation metrics for sentiment classification."""
@@ -81,10 +93,57 @@ def compute_metrics(eval_pred):
         "f1_macro": f1_score(labels, preds, average="macro")
     }
 
+def upload_model_to_blob(local_model_path, container_name, connection_string):
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container = blob_service_client.get_container_client(container_name)
+
+    # create a single version for the entire model upload
+    model_version = datetime.utcnow().strftime("v%Y%m%d_%H%M%S")
+    print(f"Uploading model version: {model_version}")
+
+    try:
+        container.create_container()
+    except Exception:
+        pass
+
+    for root, dirs, files in os.walk(local_model_path):
+        for file in files:
+            file_path = os.path.join(root, file)
+            relative_path = os.path.relpath(file_path, local_model_path)
+            blob_path = f"finbert/{model_version}/{relative_path}"
+
+            with open(file_path, "rb") as data:
+                container.upload_blob(blob_path, data, overwrite=True)
+
+    return model_version
+
+def update_registry(container_name, connection_string, model_version):
+    """Update model registry with latest staging model"""
+
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container = blob_service_client.get_container_client(container_name)
+
+    registry_blob = "finbert/registry.json"
+
+    try:
+        blob_client = container.get_blob_client(registry_blob)
+        data = blob_client.download_blob().readall()
+        registry = json.loads(data)
+    except Exception:
+        registry = {"production": None, "staging": None}
+
+    registry["staging"] = model_version
+
+    blob_client = container.get_blob_client(registry_blob)
+    blob_client.upload_blob(json.dumps(registry), overwrite=True)
+
+    print("Registry updated. Staging model:", model_version)
+
 
 def train():
     # Load config
-    config = load_config("config/training.yaml")
+    config_path = os.getenv("TRAIN_CONFIG", "config/training.yaml")
+    config = load_config(config_path)
     print(
         type(config["learning_rate"]),
         type(config["batch_size"]),
@@ -93,7 +152,19 @@ def train():
     )
 
     # Load and prepare dataset
-    df = load_dataset("data/processed/processed_data.csv")
+    dataset_path = os.getenv("DATASET_PATH", "data/processed/processed_data.csv")
+
+    if not os.path.exists(dataset_path):
+        print("Dataset not found locally. Downloading from Azure Blob...")
+
+        download_dataset_from_blob(
+            container_name="stocksentimentstorage",
+            blob_name="processed_data.csv",
+            local_path=dataset_path,
+            connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        )
+
+    df = load_dataset(dataset_path)
     df = encode_labels(df)
 
     train_df, val_df = split_dataset(df)
@@ -116,20 +187,20 @@ def train():
     train_ds.set_format("torch", columns=cols)
     val_ds.set_format("torch", columns=cols)
 
-    # Training arguments
     training_args = TrainingArguments(
         output_dir=config["output_dir"],
-        # evaluation_strategy="epoch",
-        # save_strategy="epoch",
+        evaluation_strategy="no",
+        save_strategy="no",
+        logging_steps=100,
         learning_rate=config["learning_rate"],
         per_device_train_batch_size=config["batch_size"],
         per_device_eval_batch_size=config["batch_size"],
+        gradient_accumulation_steps=2,
         num_train_epochs=config["epochs"],
         weight_decay=config["weight_decay"],
-        # load_best_model_at_end=True,
-        # metric_for_best_model="eval_loss",
         logging_dir="logs",
-        report_to="none"
+        report_to="none",
+        dataloader_num_workers=2
     )
 
     # Trainer
@@ -138,7 +209,7 @@ def train():
         args=training_args,
         train_dataset=train_ds,
         eval_dataset=val_ds,
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
         compute_metrics=compute_metrics
     )
 
@@ -150,7 +221,21 @@ def train():
     trainer.save_model(config["output_dir"])
     tokenizer.save_pretrained(config["output_dir"])
 
-    print(f"Training complete. Model saved to {config['output_dir']}")
+    print("Uploading model to Azure Blob Storage...")
+
+    model_version = upload_model_to_blob(
+        config["output_dir"],
+        container_name="model",
+        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+    )
+
+    update_registry(
+        container_name="model",
+        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+        model_version=model_version
+    )
+
+    print("Model uploaded successfully.")
 
 
 if __name__ == "__main__":

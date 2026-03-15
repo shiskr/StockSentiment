@@ -1,10 +1,38 @@
+# Git
+.git
+.gitignore
+
+# Python cache
 __pycache__
 *.pyc
 *.pyo
 *.pyd
-.env
+
+# Virtual environments
 .venv
-.git
-.gitignore
-data/raw
-data/processed
+venv
+env
+
+# Local datasets (these are downloaded from Azure anyway)
+data/
+datasets/
+
+# Trained models (they are uploaded to Azure Blob)
+model/
+
+# Logs
+logs/
+*.log
+
+# Notebook junk
+.ipynb_checkpoints
+
+# OS junk
+.DS_Store
+
+# IDE folders
+.idea
+.vscode
+
+# Tests (optional for training container)
+tests/
