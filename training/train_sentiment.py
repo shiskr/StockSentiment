@@ -4,10 +4,9 @@ import pandas as pd
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
 from azure.storage.blob import BlobServiceClient
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
+IST = timezone(timedelta(hours=5, minutes=30))
 import json
-
-import torch
 from datasets import Dataset
 from transformers import (
     AutoTokenizer,
@@ -15,8 +14,6 @@ from transformers import (
     Trainer,
     TrainingArguments
 )
-
-
 
 def load_config(path: str) -> dict:
     """Load YAML training configuration."""
@@ -42,6 +39,71 @@ def download_dataset_from_blob(container_name, blob_name, local_path, connection
         file.write(download_stream.readall())
 
     print(f"Dataset downloaded to {local_path}")
+
+def load_dataset_registry(container_name, connection_string):
+    """Load dataset registry from Azure Blob"""
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container = blob_service_client.get_container_client(container_name)
+
+    registry_blob = "datasets/registry.json"
+
+    try:
+        blob_client = container.get_blob_client(registry_blob)
+        data = blob_client.download_blob().readall()
+        registry = json.loads(data)
+    except Exception:
+        raise RuntimeError("Dataset registry not found in blob storage")
+
+    return registry
+
+def get_dataset_blob_path(connection_string):
+    """
+    Resolve which dataset should be used for training.
+    Priority:
+    1. DATASET_BLOB env variable
+    2. dataset registry 'latest'
+    """
+    dataset_blob = os.getenv("DATASET_BLOB")
+
+    if dataset_blob:
+        print(f"Training dataset: {dataset_blob}")
+        return dataset_blob
+
+    registry = load_dataset_registry(
+        container_name="models",
+        connection_string=connection_string
+    )
+
+    return registry["latest"]
+
+def record_training_run(container_name, connection_string, model_version, dataset_version, metrics):
+    """
+    Save metadata about this training run so we can trace:
+    dataset → model → metrics
+    """
+
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container = blob_service_client.get_container_client(container_name)
+
+    run_id = datetime.now(IST).strftime("v%Y%m%d_%H%M%S_%f")
+
+    run_metadata = {
+        "run_id": run_id,
+        "timestamp": datetime.now(IST).isoformat(),
+        "dataset_version": dataset_version,
+        "model_version": model_version,
+        "metrics": metrics
+    }
+
+    blob_path = f"training_runs/{run_id}.json"
+
+    container.upload_blob(
+        blob_path,
+        json.dumps(run_metadata, indent=2),
+        overwrite=True
+    )
+
+    print("Training run recorded:", blob_path)
 
 def encode_labels(df: pd.DataFrame) -> pd.DataFrame:
     """Map sentiment strings to numeric labels."""
@@ -98,7 +160,7 @@ def upload_model_to_blob(local_model_path, container_name, connection_string):
     container = blob_service_client.get_container_client(container_name)
 
     # create a single version for the entire model upload
-    model_version = datetime.utcnow().strftime("v%Y%m%d_%H%M%S")
+    model_version = datetime.now(IST).strftime("v%Y%m%d_%H%M%S")
     print(f"Uploading model version: {model_version}")
 
     try:
@@ -139,6 +201,19 @@ def update_registry(container_name, connection_string, model_version):
 
     print("Registry updated. Staging model:", model_version)
 
+def upload_metrics_to_blob(container_name, connection_string, model_version, metrics):
+    blob_service_client = BlobServiceClient.from_connection_string(connection_string)
+    container = blob_service_client.get_container_client(container_name)
+
+    blob_path = f"finbert/{model_version}/metrics.json"
+
+    container.upload_blob(
+        blob_path,
+        json.dumps(metrics, indent=2),
+        overwrite=True
+    )
+
+    print("Metrics uploaded:", blob_path)
 
 def train():
     # Load config
@@ -157,12 +232,22 @@ def train():
     if not os.path.exists(dataset_path):
         print("Dataset not found locally. Downloading from Azure Blob...")
 
+        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+
+        dataset_blob = get_dataset_blob_path(connection_string)
+        dataset_version = dataset_blob
+
         download_dataset_from_blob(
-            container_name="stocksentimentstorage",
-            blob_name="processed_data.csv",
+            container_name="models",
+            blob_name=dataset_blob,
             local_path=dataset_path,
-            connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+            connection_string=connection_string
         )
+    else:
+        # If dataset exists locally, we should still resolve the dataset version for tracking
+        connection_string = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        dataset_blob = get_dataset_blob_path(connection_string)
+        dataset_version = dataset_blob
 
     df = load_dataset(dataset_path)
     df = encode_labels(df)
@@ -215,6 +300,9 @@ def train():
 
     # Train
     trainer.train()
+    metrics = trainer.evaluate()
+
+    print("Validation metrics:", metrics)
 
     # Save model
     os.makedirs(config["output_dir"], exist_ok=True)
@@ -225,14 +313,29 @@ def train():
 
     model_version = upload_model_to_blob(
         config["output_dir"],
-        container_name="model",
+        container_name="models",
         connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING")
     )
 
     update_registry(
-        container_name="model",
+        container_name="models",
         connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
         model_version=model_version
+    )
+
+    upload_metrics_to_blob(
+        container_name="models",
+        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+        model_version=model_version,
+        metrics=metrics
+    )
+
+    record_training_run(
+        container_name="models",
+        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+        model_version=model_version,
+        dataset_version=dataset_version,
+        metrics=metrics
     )
 
     print("Model uploaded successfully.")

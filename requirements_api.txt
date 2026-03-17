@@ -1,0 +1,11 @@
+fastapi==0.122.0
+uvicorn==0.38.0
+--extra-index-url https://download.pytorch.org/whl/cpu
+pydantic==2.12.5
+azure-storage-blob==12.20.0
+azure-core
+transformers==4.41.2
+torch==2.2.2
+numpy==1.26.4
+azure-identity
+azure-mgmt-appcontainers

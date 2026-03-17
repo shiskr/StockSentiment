@@ -9,7 +9,7 @@ _tokenizer = None
 _model = None
 
 AZURE_CONNECTION_STRING = os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-CONTAINER_NAME = "model"
+CONTAINER_NAME = "models"
 REGISTRY_PATH = "finbert/registry.json"
 
 
@@ -21,7 +21,11 @@ def get_production_model_version():
     data = blob.download_blob().readall()
 
     registry = json.loads(data)
-    return registry["production"]
+    version = registry.get("production")
+
+    if not version:
+        version = registry.get("staging")
+    return version
 
 
 def download_model(version):

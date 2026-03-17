@@ -8,12 +8,15 @@ ENV PYTHONUNBUFFERED=1
 # Install system deps if needed
 RUN apt-get update && apt-get install -y \
     build-essential \
+    curl \
+    ca-certificates \
+    && curl -sL https://aka.ms/InstallAzureCLIDeb | bash \
     && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt .
+COPY requirements_api.txt .
 
 RUN pip install --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir -r requirements_api.txt
 
 COPY . .
 
