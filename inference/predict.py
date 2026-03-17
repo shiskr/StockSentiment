@@ -32,7 +32,7 @@ def download_model(version):
     blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
     container = blob_service_client.get_container_client(CONTAINER_NAME)
 
-    local_dir = f"model/finbert-{version}"
+    local_dir = f"models/finbert-{version}"
     os.makedirs(local_dir, exist_ok=True)
 
     blobs = container.list_blobs(name_starts_with=f"finbert/{version}/")
@@ -55,7 +55,7 @@ def load_model():
 
     if _model is None:
         version = get_production_model_version()
-        local_model_path = f"model/finbert-{version}"
+        local_model_path = f"models/finbert-{version}"
 
         if not os.path.exists(local_model_path):
             local_model_path = download_model(version)
