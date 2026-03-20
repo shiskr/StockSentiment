@@ -27,7 +27,6 @@ def get_production_model_version():
         version = registry.get("staging")
     return version
 
-
 def download_model(version):
     blob_service_client = BlobServiceClient.from_connection_string(AZURE_CONNECTION_STRING)
     container = blob_service_client.get_container_client(CONTAINER_NAME)
@@ -75,7 +74,7 @@ def predict(text):
     id2label = {0: "SELL", 1: "HOLD", 2: "BUY"}
     return id2label[probs.argmax().item()], probs.tolist()
 
-# preload model on service startup instead of first request
+# preload models on service startup instead of first request
 try:
     load_model()
     print("Model loaded successfully at startup.")

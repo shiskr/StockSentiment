@@ -19,7 +19,7 @@ datasets/
 
 # Trained models (they are uploaded to Azure Blob)
 models/
-model/
+models/
 
 # Logs
 logs/

@@ -8,6 +8,8 @@ from azure.mgmt.appcontainers import ContainerAppsAPIClient
 from inference.predict import load_model, predict
 from scripts.model_registry import promote_staging_model, load_registry
 from scripts.metrics import download_metrics
+from scripts.model_registry import compare_models
+from scripts.metrics import get_training_status
 
 app = FastAPI(title="Stock Sentiment API")
 
@@ -27,10 +29,12 @@ def get_prediction(request: TextRequest):
     result = predict(request.text)
     return result
 
-@app.post("/admin/train-model")
+@app.post("/admin/train-models")
 def trigger_training():
     try:
         subscription_id = os.getenv("AZURE_SUBSCRIPTION_ID")
+        if not subscription_id:
+            return {"error": "AZURE_SUBSCRIPTION_ID not set"}
         resource_group = "stock-sentiment-rg"
         job_name = "finbert-train-job"
 
@@ -51,7 +55,7 @@ def trigger_training():
 
     return {"status": "training started"}
 
-@app.post("/admin/promote-model")
+@app.post("/admin/promote-models")
 def promote_model():
     version = promote_staging_model()
     return {
@@ -61,11 +65,32 @@ def promote_model():
 
 @app.get("/admin/latest-training-metrics")
 def get_training_metrics():
-
     registry = load_registry()
-
-    version = registry["staging"]
-
+    version = registry.get("staging")
+    if not version:
+        return {"error": "No staging models found"}
     metrics = download_metrics(version)
-
     return metrics
+
+@app.get("/admin/compare-models")
+def compare():
+    return compare_models()
+
+@app.post("/admin/auto-promote")
+def auto_promote():
+    result = compare_models()
+    if result.get("decision") == "promote":
+        version = promote_staging_model()
+        return {
+            "status": "promoted",
+            "version": version,
+            "details": result
+        }
+    return {
+        "status": "not promoted",
+        "details": result
+    }
+
+@app.get("/admin/training-status")
+def training_status():
+    return get_training_status()

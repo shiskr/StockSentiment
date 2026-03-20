@@ -5,6 +5,9 @@ from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score, f1_score
 from azure.storage.blob import BlobServiceClient
 from datetime import datetime, timezone, timedelta
+
+from scripts.metrics import upload_status
+
 IST = timezone(timedelta(hours=5, minutes=30))
 import json
 from datasets import Dataset
@@ -79,7 +82,7 @@ def get_dataset_blob_path(connection_string):
 def record_training_run(container_name, connection_string, model_version, dataset_version, metrics):
     """
     Save metadata about this training run so we can trace:
-    dataset → model → metrics
+    dataset → models → metrics
     """
 
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -127,7 +130,7 @@ def split_dataset(df: pd.DataFrame):
     )
 
 def build_tokenizer_and_model(model_name: str, num_labels: int = 3):
-    """Load tokenizer and FinBERT model."""
+    """Load tokenizer and FinBERT models."""
     tokenizer = AutoTokenizer.from_pretrained(model_name)
     model = AutoModelForSequenceClassification.from_pretrained(
         model_name,
@@ -159,9 +162,9 @@ def upload_model_to_blob(local_model_path, container_name, connection_string):
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container = blob_service_client.get_container_client(container_name)
 
-    # create a single version for the entire model upload
+    # create a single version for the entire models upload
     model_version = datetime.now(IST).strftime("v%Y%m%d_%H%M%S")
-    print(f"Uploading model version: {model_version}")
+    print(f"Uploading models version: {model_version}")
 
     try:
         container.create_container()
@@ -180,7 +183,7 @@ def upload_model_to_blob(local_model_path, container_name, connection_string):
     return model_version
 
 def update_registry(container_name, connection_string, model_version):
-    """Update model registry with latest staging model"""
+    """Update models registry with latest staging models"""
 
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
     container = blob_service_client.get_container_client(container_name)
@@ -199,7 +202,7 @@ def update_registry(container_name, connection_string, model_version):
     blob_client = container.get_blob_client(registry_blob)
     blob_client.upload_blob(json.dumps(registry), overwrite=True)
 
-    print("Registry updated. Staging model:", model_version)
+    print("Registry updated. Staging models:", model_version)
 
 def upload_metrics_to_blob(container_name, connection_string, model_version, metrics):
     blob_service_client = BlobServiceClient.from_connection_string(connection_string)
@@ -254,7 +257,7 @@ def train():
 
     train_df, val_df = split_dataset(df)
 
-    # Load model & tokenizer
+    # Load models & tokenizer
     tokenizer, model = build_tokenizer_and_model(
         config["model_name"],
         num_labels=3
@@ -298,45 +301,72 @@ def train():
         compute_metrics=compute_metrics
     )
 
-    # Train
-    trainer.train()
-    metrics = trainer.evaluate()
+    model_version = None
+    metrics = None
 
-    print("Validation metrics:", metrics)
+    try:
+        # mark training start
+        upload_status({
+            "status": "running",
+            "version": None,
+            "dataset_version": dataset_version
+        })
 
-    # Save model
-    os.makedirs(config["output_dir"], exist_ok=True)
-    trainer.save_model(config["output_dir"])
-    tokenizer.save_pretrained(config["output_dir"])
+        trainer.train()
+        metrics = trainer.evaluate()
 
-    print("Uploading model to Azure Blob Storage...")
+        print("Validation metrics:", metrics)
 
-    model_version = upload_model_to_blob(
-        config["output_dir"],
-        container_name="models",
-        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING")
-    )
+        # Save model locally
+        os.makedirs(config["output_dir"], exist_ok=True)
+        trainer.save_model(config["output_dir"])
+        tokenizer.save_pretrained(config["output_dir"])
 
-    update_registry(
-        container_name="models",
-        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
-        model_version=model_version
-    )
+        print("Uploading model to Azure Blob Storage...")
 
-    upload_metrics_to_blob(
-        container_name="models",
-        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
-        model_version=model_version,
-        metrics=metrics
-    )
+        model_version = upload_model_to_blob(
+            config["output_dir"],
+            container_name="models",
+            connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING")
+        )
 
-    record_training_run(
-        container_name="models",
-        connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
-        model_version=model_version,
-        dataset_version=dataset_version,
-        metrics=metrics
-    )
+        # update registry, metrics and lineage AFTER successful upload
+        update_registry(
+            container_name="models",
+            connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+            model_version=model_version
+        )
+
+        upload_metrics_to_blob(
+            container_name="models",
+            connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+            model_version=model_version,
+            metrics=metrics
+        )
+
+        record_training_run(
+            container_name="models",
+            connection_string=os.getenv("AZURE_STORAGE_CONNECTION_STRING"),
+            model_version=model_version,
+            dataset_version=dataset_version,
+            metrics=metrics
+        )
+
+        # update status after successful training
+        upload_status({
+            "status": "completed",
+            "version": model_version,
+            "metrics": metrics
+        })
+
+    except Exception as e:
+        upload_status({
+            "status": "failed",
+            "version": model_version,
+            "error": str(e)
+        })
+        raise
+
 
     print("Model uploaded successfully.")
 

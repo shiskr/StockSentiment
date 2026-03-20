@@ -2,7 +2,7 @@
 /.idea
 /.idea
 *.pyc
-/model
+/models
 /venv
 /.venv
 /stock sentiment
