@@ -1,0 +1,44 @@
+name: Deploy API to Azure
+
+on:
+  push:
+    branches:
+      - model_only
+
+env:
+  ACR_NAME: stocksentimentregistry
+  IMAGE_NAME: stock-sentiment-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to Azure
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Login to ACR
+        run: |
+          az acr login --name $ACR_NAME
+
+      - name: Build and Push Docker image
+        run: |
+          VERSION=$(date +%Y%m%d_%H%M)
+
+          docker build -t $IMAGE_NAME:$VERSION .
+          docker tag $IMAGE_NAME:$VERSION $ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION
+          docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION
+
+          echo "IMAGE_TAG=$VERSION" >> $GITHUB_ENV
+
+      - name: Update Container App
+        run: |
+          az containerapp update \
+            --name stock-sentiment-api \
+            --resource-group stock-sentiment-rg \
+            --image $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ env.IMAGE_TAG }}
