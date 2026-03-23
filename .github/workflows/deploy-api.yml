@@ -5,6 +5,10 @@ on:
     branches:
       - model_only
 
+env:
+  ACR_NAME: ${{ vars.ACR_NAME }}
+  IMAGE_NAME: ${{ vars.IMAGE_NAME }}
+
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
@@ -26,7 +30,7 @@ jobs:
         run: |
           VERSION=$(date +%Y%m%d_%H%M)
 
-          docker build -t $IMAGE_NAME:$VERSION .
+          docker build -f Dockerfile -t $IMAGE_NAME:$VERSION .
           docker tag $IMAGE_NAME:$VERSION $ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION
           docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION
 
