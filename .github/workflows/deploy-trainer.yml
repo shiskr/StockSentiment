@@ -1,4 +1,4 @@
-name: Deploy API to Azure
+name: Deploy Trainer to Azure
 
 on:
   push:
