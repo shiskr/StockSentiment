@@ -4,6 +4,11 @@ on:
   push:
     branches:
       - model_only
+    paths:
+      - "training/**"
+      - "scripts/**"
+      - "Dockerfile.train"
+      - "requirements_train.txt"
 
 env:
   ACR_NAME: ${{ vars.ACR_NAME }}
@@ -32,14 +37,14 @@ jobs:
         run: |
           VERSION=$(date +%Y%m%d_%H%M)
 
-          docker build -f Dockerfile -t $IMAGE_NAME:$VERSION .
+          docker build -f Dockerfile.train -t $IMAGE_NAME:$VERSION .
           docker tag $IMAGE_NAME:$VERSION $ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION
           docker push $ACR_NAME.azurecr.io/$IMAGE_NAME:$VERSION
           echo "IMAGE_TAG=$VERSION" >> $GITHUB_ENV
 
       - name: Update Container App
         run: |
-          az containerapp update \
+          az containerapp job update \
             --name ${{ env.CONTAINER_NAME }} \
             --resource-group ${{ env.RESOURCE_GROUP }}  \
             --image $ACR_NAME.azurecr.io/$IMAGE_NAME:${{ env.IMAGE_TAG }}

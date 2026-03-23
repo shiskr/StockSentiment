@@ -4,6 +4,12 @@ on:
   push:
     branches:
       - model_only
+    paths:
+      - "main.py"
+      - "inference/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - "requirements_api.txt"
 
 env:
   ACR_NAME: ${{ vars.ACR_NAME }}
