@@ -9,6 +9,8 @@ on:
       - "scripts/**"
       - "Dockerfile.train"
       - "requirements_train.txt"
+      - ".github/workflows/deploy-trainer.yml"
+  workflow_dispatch:
 
 env:
   ACR_NAME: ${{ vars.ACR_NAME }}

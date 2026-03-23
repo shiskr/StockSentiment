@@ -10,6 +10,8 @@ on:
       - "scripts/**"
       - "Dockerfile"
       - "requirements_api.txt"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
 
 env:
   ACR_NAME: ${{ vars.ACR_NAME }}
