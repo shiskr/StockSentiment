@@ -5,10 +5,6 @@ on:
     branches:
       - model_only
 
-env:
-  ACR_NAME: stocksentimentregistry
-  IMAGE_NAME: stock-sentiment-api
-
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
